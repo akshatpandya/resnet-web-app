@@ -1,4 +1,4 @@
-"""ResNet50 Image Classification Web App - Streamlit."""
+"""ImageNet Image Classification Web App - Streamlit."""
 
 import streamlit as st
 import torch
@@ -9,7 +9,7 @@ from pathlib import Path
 
 # Page config
 st.set_page_config(
-    page_title="ResNet50 Image Classifier",
+    page_title="ImageNet Classifier",
     page_icon="📷",
     layout="wide",
 )
@@ -20,9 +20,15 @@ IMAGENET_CLASSES_PATH = BASE_DIR / "imagenet_classes.txt"
 
 
 @st.cache_resource
-def load_model():
-    """Load pretrained ResNet50 and cache it."""
-    model = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
+def load_model(model_name: str):
+    """Load a pretrained ImageNet model and cache it."""
+    if model_name == "ResNet50":
+        model = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
+    elif model_name == "ViT-B/16":
+        model = models.vit_b_16(weights=models.ViT_B_16_Weights.IMAGENET1K_V1)
+    else:
+        raise ValueError(f"Unsupported model: {model_name}")
+
     model.eval()
     return model
 
@@ -48,7 +54,7 @@ def get_preprocess():
 
 
 def run_inference(model, image: Image.Image, top_n: int, labels: list[str]):
-    """Run ResNet50 inference and return top-N predictions."""
+    """Run model inference and return top-N predictions."""
     preprocess = get_preprocess()
     img_tensor = preprocess(image).unsqueeze(0)
 
@@ -65,14 +71,19 @@ def run_inference(model, image: Image.Image, top_n: int, labels: list[str]):
 
 
 def main():
-    st.title("ResNet50 Image Classifier")
+    st.title("ImageNet Image Classifier")
     st.markdown(
         "Capture an image with your camera or upload a file. "
-        "The app runs ResNet50 inference and shows the top predictions."
+        "The app runs an ImageNet-pretrained model and shows the top predictions."
     )
 
-    # Sidebar: Top N configuration
+    # Sidebar: model and Top N configuration
     st.sidebar.header("Settings")
+    model_name = st.sidebar.selectbox(
+        "Model architecture",
+        options=["ResNet50", "ViT-B/16"],
+        index=0,
+    )
     top_n = st.sidebar.slider(
         "Number of top predictions",
         min_value=1,
@@ -99,14 +110,14 @@ def main():
         if image_source is None:
             st.info(
                 "Grant camera permission or upload an image to see predictions. "
-                "ResNet50 is trained on ImageNet (1000 classes)."
+                f"{model_name} is trained on ImageNet (1000 classes)."
             )
         else:
             image = Image.open(image_source).convert("RGB")
             st.image(image, caption="Input image", use_container_width=True)
 
             with st.spinner("Running inference..."):
-                model = load_model()
+                model = load_model(model_name)
                 labels = load_imagenet_labels()
                 predictions = run_inference(model, image, top_n, labels)
 
