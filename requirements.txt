@@ -7,7 +7,6 @@ streamlit-webrtc>=0.47.0
 opencv-python-headless>=4.8.0
 av>=10.0.0
 
-# Use CPU-only PyTorch wheels (Streamlit Cloud friendly)
---extra-index-url https://download.pytorch.org/whl/cpu
+# PyTorch (requires Python <= 3.12 on most hosts today)
 torch==2.2.2
 torchvision==0.17.2
