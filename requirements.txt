@@ -9,5 +9,5 @@ av>=10.0.0
 
 # Use CPU-only PyTorch wheels (Streamlit Cloud friendly)
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch>=2.0.0
-torchvision>=0.15.0
+torch==2.2.2
+torchvision==0.17.2
