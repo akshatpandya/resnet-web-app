@@ -8,5 +8,5 @@ opencv-python-headless>=4.8.0
 av>=10.0.0
 
 # PyTorch (requires Python <= 3.12 on most hosts today)
-torch==2.2.2
+torch==2.10.0
 torchvision==0.17.2
