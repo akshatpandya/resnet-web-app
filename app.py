@@ -10,6 +10,9 @@ import numpy as np
 import cv2
 import av
 from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+from datetime import datetime, timezone
+import csv
+import io
 
 # Page config
 st.set_page_config(
@@ -115,8 +118,56 @@ def bgr_to_pil(bgr: np.ndarray) -> Image.Image:
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
     return Image.fromarray(rgb)
 
+def _ensure_session_state():
+    if "inference_history" not in st.session_state:
+        st.session_state["inference_history"] = []
+
+
+def _append_inference_history(*, source: str, model_name: str, top5: list[tuple[str, float]]):
+    st.session_state["inference_history"].append(
+        {
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "source": source,
+            "model": model_name,
+            "top5": top5,
+        }
+    )
+
+
+def _history_to_csv_bytes(history: list[dict]) -> bytes:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "timestamp_utc",
+            "source",
+            "model",
+            "rank1_class",
+            "rank1_confidence",
+            "rank2_class",
+            "rank2_confidence",
+            "rank3_class",
+            "rank3_confidence",
+            "rank4_class",
+            "rank4_confidence",
+            "rank5_class",
+            "rank5_confidence",
+        ]
+    )
+    for entry in history:
+        top5 = entry.get("top5") or []
+        padded = (top5 + [("", "")] * 5)[:5]
+        row = [entry.get("timestamp_utc", ""), entry.get("source", ""), entry.get("model", "")]
+        for cls, conf in padded:
+            row.append(cls)
+            row.append("" if conf == "" else f"{float(conf):.8f}")
+        writer.writerow(row)
+    return output.getvalue().encode("utf-8")
+
 
 def main():
+    _ensure_session_state()
+
     st.title("ImageNet Image Classifier")
     st.markdown(
         "Capture an image with your camera or upload a file. "
@@ -173,6 +224,11 @@ def main():
             uploaded_image = Image.open(file_img).convert("RGB")
 
         image = captured_image or uploaded_image
+        source_label = (
+            "camera_capture"
+            if captured_image is not None
+            else (getattr(file_img, "name", "uploaded_image") if uploaded_image is not None else "")
+        )
 
     with col2:
         if image is None:
@@ -192,6 +248,12 @@ def main():
                 model = load_model(model_name)
                 labels = load_imagenet_labels()
                 predictions = run_inference(model, image, top_n, labels)
+                top5_for_history = run_inference(model, image, 5, labels)
+                _append_inference_history(
+                    source=source_label or "unknown",
+                    model_name=model_name,
+                    top5=top5_for_history,
+                )
 
             st.subheader("Top predictions")
             for i, (label, prob) in enumerate(predictions, 1):
@@ -201,12 +263,52 @@ def main():
             # Table view
             st.dataframe(
                 [
-                    {"Rank": i, "Class": label, "Confidence (%)": f"{prob * 100:.2f}"}
+                    {"Model": model_name, "Rank": i, "Class": label, "Confidence (%)": f"{prob * 100:.2f}"}
                     for i, (label, prob) in enumerate(predictions, 1)
                 ],
                 use_container_width=True,
                 hide_index=True,
             )
+
+            st.divider()
+            st.subheader("Session: saved top-5 results")
+            history = st.session_state.get("inference_history", [])
+
+            cols = st.columns([1, 1, 1])
+            with cols[0]:
+                st.metric("Images inferred (this session)", len(history))
+            with cols[1]:
+                st.download_button(
+                    "Download CSV",
+                    data=_history_to_csv_bytes(history),
+                    file_name="inference_history_top5.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                    disabled=len(history) == 0,
+                )
+            with cols[2]:
+                if st.button("Clear session history", use_container_width=True, disabled=len(history) == 0):
+                    st.session_state["inference_history"] = []
+                    st.rerun()
+
+            if history:
+                st.dataframe(
+                    [
+                        {
+                            "Timestamp (UTC)": h["timestamp_utc"],
+                            "Source": h["source"],
+                            "Model": h["model"],
+                            "Top-1": f'{h["top5"][0][0]} ({h["top5"][0][1]*100:.2f}%)' if h.get("top5") else "",
+                            "Top-2": f'{h["top5"][1][0]} ({h["top5"][1][1]*100:.2f}%)' if len(h.get("top5") or []) > 1 else "",
+                            "Top-3": f'{h["top5"][2][0]} ({h["top5"][2][1]*100:.2f}%)' if len(h.get("top5") or []) > 2 else "",
+                            "Top-4": f'{h["top5"][3][0]} ({h["top5"][3][1]*100:.2f}%)' if len(h.get("top5") or []) > 3 else "",
+                            "Top-5": f'{h["top5"][4][0]} ({h["top5"][4][1]*100:.2f}%)' if len(h.get("top5") or []) > 4 else "",
+                        }
+                        for h in history
+                    ],
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
 
 if __name__ == "__main__":
